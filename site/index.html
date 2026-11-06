@@ -1,0 +1,463 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Internship Tracker</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #fafaf9; --panel: #ffffff; --head: #f5f5f3; --ink: #18181a; --muted: #6f7076;
+    --line: #e7e6e2; --accent: #2456d6; --accent-ink: #ffffff; --soft: #e9effd; --live: #12864f;
+    --warn: #a35f00;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #121315; --panel: #1a1b1e; --head: #202125; --ink: #ededeb; --muted: #9a9ca3;
+      --line: #2d2e33; --accent: #8aa9ff; --accent-ink: #10162a; --soft: #1f2a47; --live: #4cc38a;
+      --warn: #e2a84f;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 14px/1.4 Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  main { max-width: 1120px; margin: 0 auto; padding: 36px 24px 72px; }
+  h1 { font-size: 34px; line-height: 1.1; letter-spacing: -0.03em; margin: 0 0 6px; }
+  #status { color: var(--muted); display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
+  #status.bad { color: var(--warn); }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--live); }
+  #status.bad .dot { background: var(--warn); }
+
+  .filters { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-top: 24px; }
+  .field {
+    display: flex; align-items: center; gap: 6px; background: var(--panel); min-width: 0;
+    border: 1px solid var(--line); border-radius: 6px; padding: 0 12px; height: 40px;
+  }
+  .field span { color: var(--muted); white-space: nowrap; }
+  .field select, .field input {
+    flex: 1; min-width: 0; font: inherit; font-weight: 500; color: var(--ink);
+    background: transparent; border: 0; outline: 0; height: 100%;
+  }
+  .field:focus-within { border-color: var(--accent); }
+  .search { grid-column: span 2; }
+  .toggle {
+    font: inherit; font-weight: 500; color: var(--ink); background: var(--panel); cursor: pointer;
+    border: 1px solid var(--line); border-radius: 6px; height: 40px; padding: 0 12px;
+  }
+  .toggle[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+
+  #count { color: var(--muted); margin: 18px 0 8px; }
+  .frame { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+  table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+  th {
+    background: var(--head); color: var(--muted); font-size: 11px; font-weight: 600; letter-spacing: 0.06em;
+    text-align: left; text-transform: uppercase; padding: 10px 14px; border-bottom: 1px solid var(--line);
+  }
+  td { padding: 12px 14px; vertical-align: top; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
+  tbody tr:last-child td { border-bottom: 0; }
+  tbody tr:hover { background: var(--head); }
+  tr.fresh { animation: arrive 4s ease-out; }
+  @keyframes arrive { from { background: var(--soft); } to { background: transparent; } }
+  @media (prefers-reduced-motion: reduce) { tr.fresh { animation: none; } }
+  .c-found { width: 92px; } .c-company { width: 176px; } .c-location { width: 156px; }
+  .c-pay { width: 108px; } .c-apply { width: 164px; }
+  .found { font-weight: 600; white-space: nowrap; }
+  .found.recent { color: var(--live); }
+  .company { display: flex; align-items: flex-start; gap: 8px; font-weight: 600; }
+  .tile {
+    flex: none; width: 22px; height: 22px; border-radius: 5px; color: #fff; font-size: 11px; font-weight: 700;
+    display: grid; place-items: center; overflow: hidden;
+  }
+  .tile.logo { background: #fff; box-shadow: inset 0 0 0 1px var(--line); }
+  .tile img { width: 18px; height: 18px; object-fit: contain; display: block; }
+  .role { color: var(--ink); font-weight: 500; text-decoration: none; }
+  .role:hover { color: var(--accent); text-decoration: underline; }
+  .via { color: var(--muted); font-size: 12px; margin-top: 2px; }
+  .quiet { color: var(--muted); }
+  .apply { display: flex; align-items: center; gap: 4px; }
+  .apply a {
+    display: inline-flex; align-items: center; justify-content: center; height: 32px; width: 72px; flex: none;
+    color: var(--accent-ink); background: var(--accent); border-radius: 7px;
+    text-decoration: none; font-weight: 600; font-size: 13px; white-space: nowrap;
+  }
+  .apply a:hover { filter: brightness(1.1); }
+  .mark {
+    display: inline-grid; place-items: center; width: 32px; height: 32px; flex: none; padding: 0;
+    color: var(--muted); cursor: pointer; background: none; border: 0; border-radius: 7px;
+  }
+  .mark svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .mark:hover { background: var(--line); color: var(--ink); }
+  .mark[aria-pressed="true"] { color: var(--accent); }
+  .mark.save[aria-pressed="true"] svg { fill: currentColor; }
+  .empty { color: var(--muted); text-align: center; padding: 56px 16px; }
+  #more {
+    display: block; width: 100%; font: inherit; font-weight: 500; color: var(--ink); background: var(--panel);
+    border: 1px solid var(--line); border-radius: 6px; height: 42px; margin-top: 12px; cursor: pointer;
+  }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+  @media (max-width: 760px) {
+    main { padding: 24px 16px 56px; }
+    h1 { font-size: 28px; }
+    .filters { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  }
+  @media (max-width: 940px) {
+    thead { display: none; }
+    table, tbody, tr, td { display: block; width: 100%; }
+    tr { position: relative; padding: 12px 14px; border-bottom: 1px solid var(--line); }
+    tbody tr:last-child { border-bottom: 0; }
+    td { border: 0; padding: 0; margin-bottom: 3px; }
+    td:empty { display: none; }
+    .cell-found { position: absolute; top: 12px; right: 14px; width: auto; }
+    .cell-company { padding-right: 76px; margin-bottom: 6px; }
+    .cell-apply { margin: 8px 0 0; }
+    .cell-location, .cell-pay { display: inline; width: auto; margin-right: 10px; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <h1>Tech internships</h1>
+  <div id="status" role="status">Loading…</div>
+
+  <div class="filters">
+    <label class="field search"><input id="search" type="search" placeholder="Search title or company" aria-label="Search title or company"></label>
+    <label class="field"><span>Show:</span>
+      <select id="view">
+        <option value="all">All roles</option>
+        <option value="save">Saved</option>
+        <option value="applied">Applied</option>
+      </select>
+    </label>
+    <label class="field"><span>Track:</span><select id="track"><option value="">All tech</option></select></label>
+    <label class="field"><span>Location:</span>
+      <select id="region">
+        <option value="na">US &amp; Canada</option>
+        <option value="us">United States</option>
+        <option value="canada">Canada</option>
+        <option value="remote">Remote</option>
+        <option value="all">Anywhere</option>
+      </select>
+    </label>
+    <label class="field"><span>Posted:</span>
+      <select id="age">
+        <option value="0">Any time</option>
+        <option value="0.0417">Last hour</option>
+        <option value="1">Last 24 hours</option>
+        <option value="3">Last 3 days</option>
+        <option value="7">Last week</option>
+        <option value="30">Last month</option>
+      </select>
+    </label>
+    <label class="field"><span>Season:</span><select id="term"><option value="">Any season</option></select></label>
+    <button class="toggle" id="pay" aria-pressed="false">Pay listed</button>
+  </div>
+
+  <p id="count"></p>
+  <div class="frame">
+    <table>
+      <thead>
+        <tr>
+          <th class="c-found">Posted</th><th class="c-company">Company</th><th>Role</th>
+          <th class="c-location">Location</th><th class="c-pay">Pay</th><th class="c-apply">Apply</th>
+        </tr>
+      </thead>
+      <tbody id="rows"></tbody>
+    </table>
+  </div>
+  <button id="more" hidden>Show more</button>
+</main>
+
+<script>
+const PAGE = 50;
+const REFRESH_MS = 75000;
+const SOURCES = {
+  greenhouse: "Greenhouse", lever: "Lever", ashby: "Ashby", workday: "Workday",
+  smartrecruiters: "SmartRecruiters", workable: "Workable", community: "Community list",
+};
+const TILE_COLORS = ["#2456d6", "#12864f", "#b4442d", "#7a3fc4", "#0b7a8c", "#a35f00", "#c0357a", "#4b5563"];
+const $ = (id) => document.getElementById(id);
+
+function read(key, fallback) {
+  try { return JSON.parse(localStorage.getItem(key)) ?? fallback; } catch { return fallback; }
+}
+function write(key, value) {
+  try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* private window */ }
+}
+
+const marks = read("marks", {});
+const state = Object.assign(
+  { track: "", region: "na", age: "0", term: "", pay: false },
+  read("filters", {}), { view: "all", query: "" }
+);
+let jobs = [];
+let knownIds = null;
+let freshIds = new Set();
+let shown = PAGE;
+let loadedVersion = null;
+const failedLogos = new Set();
+
+const ICONS = {
+  save: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h12v18l-6-4-6 4z"/></svg>',
+  applied: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12.5l5 5L20 6.5"/></svg>',
+};
+const ageDays = (iso) => (Date.now() - new Date(iso).getTime()) / 864e5;
+
+function timeAgo(iso) {
+  const days = ageDays(iso);
+  if (days < 1 / 1440) return "just now";
+  if (days < 1 / 24) return Math.floor(days * 1440) + "m ago";
+  return Math.floor(days * 24) + "h ago";
+}
+
+/* Some employers only publish a date, stored as midnight UTC, so never show an hour for those. */
+function postedLabel(iso) {
+  if (!iso) return "—";
+  const dateOnly = iso.endsWith("T00:00:00Z");
+  const days = ageDays(iso);
+  if (!dateOnly && days < 1) return days < 0 ? "Today" : timeAgo(iso);
+  const options = { month: "short", day: "numeric", timeZone: dateOnly ? "UTC" : undefined };
+  const today = new Date().toISOString().slice(0, 10);
+  if (dateOnly && iso.slice(0, 10) >= today) return "Today";
+  return new Date(iso).toLocaleDateString(undefined, options);
+}
+
+function matches(job) {
+  if (state.view !== "all") return marks[job.id] === state.view;
+  if (marks[job.id] === "applied") return false;
+  if (state.region === "na" ? !job.regions.some((region) => region !== "other")
+      : state.region !== "all" && !job.regions.includes(state.region)) return false;
+  if (state.track && job.track !== state.track) return false;
+  if (state.age !== "0" && (!job.posted || ageDays(job.posted) > Number(state.age))) return false;
+  if (state.term && job.term !== state.term) return false;
+  if (state.pay && !job.pay) return false;
+  if (state.query) {
+    const text = (job.company + " " + job.title + " " + job.location.join(" ")).toLowerCase();
+    return state.query.toLowerCase().split(/\s+/).every((word) => text.includes(word));
+  }
+  return true;
+}
+
+function safeUrl(url) {
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === "https:" || parsed.protocol === "http:" ? parsed.href : "#";
+  } catch { return "#"; }
+}
+
+function element(tag, className, text) {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (text !== undefined) node.textContent = text;
+  return node;
+}
+
+function cell(name, ...children) {
+  const node = element("td", "cell-" + name);
+  node.append(...children);
+  return node;
+}
+
+function companyTile(name, domain) {
+  const tile = element("span", "tile");
+  tile.setAttribute("aria-hidden", "true");
+  const useLetter = () => {
+    let hash = 0;
+    for (const letter of name) hash = (hash * 31 + letter.charCodeAt(0)) >>> 0;
+    tile.className = "tile";
+    tile.style.background = TILE_COLORS[hash % TILE_COLORS.length];
+    tile.textContent = (name.trim()[0] || "?").toUpperCase();
+  };
+  if (!domain || !/^[a-z0-9.-]+$/i.test(domain) || failedLogos.has(domain)) {
+    useLetter();
+    return tile;
+  }
+  const logo = new Image();
+  logo.alt = "";
+  logo.loading = "lazy";
+  logo.referrerPolicy = "no-referrer";
+  logo.src = "https://icons.duckduckgo.com/ip3/" + domain + ".ico";
+  logo.addEventListener("error", () => { failedLogos.add(domain); useLetter(); });
+  tile.className = "tile logo";
+  tile.append(logo);
+  return tile;
+}
+
+function markButton(job, mark, label) {
+  const button = element("button", "mark " + mark);
+  button.innerHTML = ICONS[mark];
+  button.title = label;
+  button.setAttribute("aria-label", label + ": " + job.title);
+  button.setAttribute("aria-pressed", marks[job.id] === mark);
+  button.addEventListener("click", () => {
+    if (marks[job.id] === mark) delete marks[job.id]; else marks[job.id] = mark;
+    write("marks", marks);
+    render(false);
+  });
+  return button;
+}
+
+function row(job) {
+  const tr = element("tr", freshIds.has(job.id) ? "fresh" : "");
+
+  const recent = job.posted && ageDays(job.posted) < 2;
+  const found = element("div", "found" + (recent ? " recent" : ""), postedLabel(job.posted));
+  found.title = job.posted ? "Posted by the employer" : "The employer didn't publish a date";
+
+  const company = element("div", "company");
+  company.append(companyTile(job.company, job.domain), element("span", "", job.company));
+
+  const role = element("a", "role", job.title);
+  role.href = safeUrl(job.url);
+  role.target = "_blank";
+  role.rel = "noopener noreferrer";
+  const source = SOURCES[job.board.split(":")[0]] || "Company site";
+  const via = element("div", "via", ["via " + source, job.term].filter(Boolean).join(" · "));
+
+  const places = job.location.slice(0, 2).join(" · ") || "Not listed";
+  const more = job.location.length > 2 ? " +" + (job.location.length - 2) : "";
+
+  const link = element("a", "", "Apply");
+  link.href = safeUrl(job.url);
+  link.target = "_blank";
+  link.rel = "noopener noreferrer";
+  const apply = element("div", "apply");
+  apply.append(link, markButton(job, "save", "Save"), markButton(job, "applied", "Mark applied"));
+
+  tr.append(
+    cell("found", found), cell("company", company), cell("role", role, via),
+    cell("location", element("span", "quiet", places + more)),
+    cell("pay", element("span", "quiet", job.pay || "")),
+    cell("apply", apply),
+  );
+  return tr;
+}
+
+function render(resetPaging = true) {
+  if (resetPaging) shown = PAGE;
+  const { view, query, ...saved } = state;
+  write("filters", saved);
+
+  const visible = jobs.filter(matches);
+  $("count").textContent = visible.length.toLocaleString() + (visible.length === 1 ? " internship" : " internships");
+  const rows = $("rows");
+  rows.replaceChildren(...visible.slice(0, shown).map(row));
+  if (!visible.length) {
+    const empty = element("td", "empty", state.view === "all" ? "Nothing matches these filters." : "Nothing here yet.");
+    empty.colSpan = 6;
+    const tr = element("tr");
+    tr.append(empty);
+    rows.append(tr);
+  }
+  $("more").hidden = visible.length <= shown;
+}
+
+function fillOptions(select, values) {
+  const current = select.value;
+  while (select.options.length > 1) select.remove(1);
+  for (const value of values) {
+    const option = element("option", "", value);
+    option.value = value;
+    select.append(option);
+  }
+  select.value = values.includes(current) ? current : "";
+}
+
+function topValues(field, limit) {
+  const counts = {};
+  for (const job of jobs) if (job[field]) counts[job[field]] = (counts[job[field]] || 0) + 1;
+  return Object.keys(counts).sort((a, b) => counts[b] - counts[a]).slice(0, limit);
+}
+
+function showStatus(meta) {
+  const status = $("status");
+  const minutes = Math.max(0, Math.round(ageDays(meta.updated) * 1440));
+  const stale = minutes > 45;
+  status.classList.toggle("bad", stale);
+  const parts = [
+    minutes < 1 ? "Checked just now" : "Checked " + timeAgo(meta.updated),
+    meta.boards.toLocaleString() + " company boards",
+  ];
+  if (meta.lead && meta.lead.total >= 20) {
+    parts.push("found " + Math.round(100 * meta.lead.ahead / meta.lead.total) + "% of this week's roles before the GitHub lists");
+  }
+  if (stale) parts.push("scanning may have stopped");
+  status.replaceChildren(element("span", "dot"), element("span", "", parts.join(" · ")));
+}
+
+/* On GitHub Pages, listings come straight from the data branch. Reading them at a
+   specific commit skips the 5-minute cache on the branch's normal file links. */
+function dataSource() {
+  const match = location.hostname.match(/^([^.]+)\.github\.io$/);
+  const repo = location.pathname.split("/").filter(Boolean)[0];
+  return match && repo ? match[1] + "/" + repo : null;
+}
+
+async function latestVersion(source) {
+  if (!source) return "local";
+  try {
+    const response = await fetch("https://api.github.com/repos/" + source + "/commits/data", {
+      headers: { Accept: "application/vnd.github.sha" },
+    });
+    if (response.ok) return (await response.text()).trim();
+  } catch { /* use the branch link below */ }
+  return "data";
+}
+
+async function load() {
+  const source = dataSource();
+  const version = await latestVersion(source);
+  if (version !== "local" && version !== "data" && version === loadedVersion) return;
+  const base = source ? "https://raw.githubusercontent.com/" + source + "/" + version + "/" : "";
+  const meta = await (await fetch(base + "meta.json", { cache: "no-store" })).json();
+  showStatus(meta);
+  if (source === null && loadedVersion === meta.updated) return;
+
+  const response = await fetch(base + "jobs.json", { cache: "no-store" });
+  if (!response.ok) throw new Error("jobs.json returned " + response.status);
+  jobs = await response.json();
+  loadedVersion = source ? version : meta.updated;
+
+  const ids = new Set(jobs.map((job) => job.id));
+  freshIds = knownIds ? new Set([...ids].filter((id) => !knownIds.has(id))) : new Set();
+  knownIds = ids;
+  fillOptions($("track"), topValues("track", 12));
+  fillOptions($("term"), topValues("term", 8));
+  state.track = $("track").value = jobs.some((job) => job.track === state.track) ? state.track : "";
+  state.term = $("term").value = jobs.some((job) => job.term === state.term) ? state.term : "";
+  render(false);
+}
+
+function bindControls() {
+  $("search").addEventListener("input", (event) => { state.query = event.target.value; render(); });
+  for (const name of ["view", "track", "region", "age", "term"]) {
+    $(name).value = state[name];
+    $(name).addEventListener("change", (event) => { state[name] = event.target.value; render(); });
+  }
+  $("pay").setAttribute("aria-pressed", state.pay);
+  $("pay").addEventListener("click", () => {
+    state.pay = !state.pay;
+    $("pay").setAttribute("aria-pressed", state.pay);
+    render();
+  });
+  $("more").addEventListener("click", () => { shown += PAGE; render(false); });
+}
+
+async function start() {
+  bindControls();
+  try {
+    await load();
+  } catch (error) {
+    $("status").textContent = "Couldn't load the listings. Open this page from its web address, not as a file.";
+    $("status").classList.add("bad");
+  }
+  setInterval(() => load().catch(() => {}), REFRESH_MS);
+}
+
+start();
+</script>
+</body>
+</html>

@@ -1,0 +1,48 @@
+name: Scan for internships
+
+# One run scans continuously for just under 6 hours, GitHub's limit for a job.
+# The schedule queues the next run, which starts as soon as the current one ends.
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: write
+  issues: write
+
+concurrency:
+  group: scan
+  cancel-in-progress: false
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 355
+    env:
+      GH_TOKEN: ${{ github.token }}
+      DATA_REMOTE: https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git
+      SITE_URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      # GitHub pauses scheduled workflows after 60 days without repository
+      # activity. Re-enabling on each run keeps this one going.
+      - name: Keep the schedule enabled
+        run: gh api -X PUT "repos/${GITHUB_REPOSITORY}/actions/workflows/scrape.yml/enable"
+
+      - name: Restore listings
+        run: |
+          mkdir -p data
+          if git fetch --depth=1 origin data; then
+            git archive FETCH_HEAD | tar -x -C data
+          fi
+
+      # A failed run makes GitHub email you, so a broken scanner doesn't go unnoticed.
+      - name: Scan
+        run: python -m tracker --watch 330

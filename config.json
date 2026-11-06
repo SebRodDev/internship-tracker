@@ -1,0 +1,15 @@
+{
+  "tracks": ["Software", "AI/ML", "Data", "Security", "Quant", "Product", "Hardware"],
+  "alerts": {
+    "enabled": true,
+    "every_minutes": 15,
+    "regions": ["us", "canada", "remote"],
+    "tracks": [],
+    "keywords": [],
+    "exclude_keywords": [],
+    "max_age_days": 14
+  },
+  "watch_companies": [],
+  "exclude_companies": [],
+  "extra_boards": []
+}
