@@ -40,6 +40,8 @@ def parse_board(url):
     if host == "apply.workable.com" and parts and parts[0] not in _WORKABLE_SKIP:
         return "workable", parts[0]
 
+    if host == "ats.rippling.com" and parts:
+        return "rippling", parts[0]
     if host.endswith(".oraclecloud.com"):
         match = _ORACLE_SITE.search(parsed.path)
         return ("oracle", "%s/%s" % (host, match.group(1))) if match else None
@@ -67,6 +69,7 @@ _GREENHOUSE_ID = re.compile(r"(?:gh_jid=|/jobs/)(\d+)")
 _WORKDAY_ID = re.compile(r"/job/(?:.*/)?[^/]*_([A-Za-z0-9-]+?)(?:-\d+)?(?:/apply.*)?(?:\?.*)?$")
 _NUMERIC_ID = re.compile(r"/(\d{6,})(?:[/?]|$)")
 _ORACLE_ID = re.compile(r"/job/(\d+)")
+_SITE_ID = re.compile(r"/(?:job|jobs|search|details|results)/(\d{4,})")
 
 
 def posting_key(url):
@@ -84,5 +87,8 @@ def posting_key(url):
     if "smartrecruiters.com" in host or "amazon.jobs" in host:
         match = _NUMERIC_ID.search(url)
         return match.group(1) if match else None
-    match = _GREENHOUSE_ID.search(url)
-    return "gh:%s" % match.group(1) if match else None
+    if "greenhouse.io" in host or "gh_jid=" in url:
+        match = _GREENHOUSE_ID.search(url)
+        return "gh:%s" % match.group(1) if match else None
+    match = _SITE_ID.search(url)
+    return "%s:%s" % (".".join(host.split(".")[-2:]), match.group(1)) if match else None

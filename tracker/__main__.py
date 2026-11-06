@@ -1,7 +1,7 @@
 """Scan job boards, update the listings, and send alerts.
 
-With no flags this does one scan. With --watch it keeps scanning, checking every board
-each cycle. Boards that haven't changed answer almost instantly, so cycles stay short.
+With no flags this does one scan. With --watch it keeps scanning: boards with live roles
+every cycle and quiet boards in turns. Unchanged boards answer almost instantly.
 """
 from __future__ import annotations
 
@@ -24,14 +24,19 @@ from .classify import is_past, regions_for, term_for, track_for
 from .discover import parse_board, posting_key
 from .net import FetchError, Gone, Unchanged, fetch_json
 from .logos import fill_domains
-from .sources import (BUILT_IN_BOARDS, COMMUNITY_LISTS, FETCHERS, iso, job, latest_commit, read_detail,
+from .sources import (BUILT_IN_BOARDS, COMMUNITY_LISTS, DISCOVERY_LISTS, FETCHERS, iso, job, latest_commit, read_detail,
                       read_listings)
 
 # Bump this when filtering changes, so boards get re-read instead of reporting "unchanged".
-SCAN_VERSION = 3
+SCAN_VERSION = 4
 WORKERS = 40
 CYCLE_BUDGET_SECONDS = 15 * 60
 MIN_CYCLE_SECONDS = 60
+# Boards with no live roles are read in turns, so all are covered every this many cycles.
+QUIET_ROTATION_CYCLES = 8
+# Large search feeds are only read every this many cycles.
+SLOW_SOURCES = ("tiktok", "google", "apple")
+SLOW_SOURCE_EVERY_CYCLES = 10
 # GitHub allows few API calls without a token, so check less often when running locally.
 GITHUB_TOKEN = os.environ.get("GH_TOKEN")
 COMMUNITY_EVERY_SECONDS = 0 if GITHUB_TOKEN else 10 * 60
@@ -84,14 +89,14 @@ def board_key(ats, slug):
     return "%s:%s" % (ats, slug.lower())
 
 
-def read_community(commits):
+def read_community(commits, sources=COMMUNITY_LISTS):
     """Fetch community lists with new commits. Returns ({name: raw items}, failed names).
 
     `commits` remembers the last commit read from each list, so unchanged lists cost
     one tiny request.
     """
     lists, failed = {}, set()
-    for name, (repository, branch) in COMMUNITY_LISTS.items():
+    for name, (repository, branch) in sources.items():
         try:
             commit = latest_commit(repository, branch, GITHUB_TOKEN)
             if commit != commits.get(name):
@@ -195,11 +200,20 @@ def without_list_copies(raw_jobs):
     Some lists use short links with no posting ID, so titles are compared as well.
     """
     employer_jobs = [raw for raw in raw_jobs if not raw["board"].startswith("community:")]
-    links = {posting_key(raw["url"]) for raw in employer_jobs} - {None}
-    titles = {loose_key(raw) for raw in employer_jobs}
-    return [raw for raw in raw_jobs
-            if not raw["board"].startswith("community:")
-            or (posting_key(raw["url"]) not in links and loose_key(raw) not in titles)]
+    links = {posting_key(raw["url"]): raw for raw in employer_jobs}
+    links.pop(None, None)
+    titles = {loose_key(raw): raw for raw in employer_jobs}
+    kept = []
+    for raw in raw_jobs:
+        if not raw["board"].startswith("community:"):
+            kept.append(raw)
+            continue
+        employer = links.get(posting_key(raw["url"])) or titles.get(loose_key(raw))
+        if employer is None:
+            kept.append(raw)
+        elif not employer["posted"]:
+            employer["posted"] = raw["posted"]  # Some employers publish no date at all.
+    return kept
 
 
 def merge(raw_jobs, seen, now, excluded, tracks=None, first_run=False):
@@ -237,7 +251,8 @@ def merge(raw_jobs, seen, now, excluded, tracks=None, first_run=False):
             "company": item["company"],
             "title": item["title"],
             "location": item["location"],
-            "regions": regions_for(item["location"]),
+            "regions": regions_for(item["location"], item.get("country")),
+            "country": item.get("country"),
             "track": track,
             "term": term,
             "pay": item.get("pay"),
@@ -415,6 +430,8 @@ class Scanner:
         self.community = {}
         self.community_at = 0
         self.list_commits = {}
+        self.cycle_number = 0
+        self.quiet_offset = 0
         self.published_at = 0
         self.forget_board_state_if_stale()
 
@@ -429,11 +446,30 @@ class Scanner:
                 board.pop(field, None)
 
     def live_boards(self):
-        """Every board that still exists, shuffled so no one host gets them all at once."""
-        keys = [key for key, board in self.boards.items()
+        return [key for key, board in self.boards.items()
                 if board.get("misses", 0) < DROP_BOARD_AFTER_404S]
-        random.shuffle(keys)
-        return keys
+
+    def choose_boards(self):
+        """Boards with live roles go every cycle; quiet ones take turns. Returns them shuffled."""
+        live = self.live_boards()
+        active = {item["board"] for item in self.jobs}
+        slow_turn = self.cycle_number % SLOW_SOURCE_EVERY_CYCLES == 0
+        chosen, quiet = [], []
+        for key in live:
+            board = self.boards[key]
+            if board["ats"] in SLOW_SOURCES:
+                if slow_turn or not board.get("read"):
+                    chosen.append(key)
+            elif key in active or not board.get("read"):
+                chosen.append(key)
+            else:
+                quiet.append(key)
+        quiet.sort()
+        size = -(-len(quiet) // QUIET_ROTATION_CYCLES)
+        chosen += quiet[self.quiet_offset:self.quiet_offset + size]
+        self.quiet_offset = self.quiet_offset + size if self.quiet_offset + size < len(quiet) else 0
+        random.shuffle(chosen)
+        return chosen
 
     def cycle(self):
         started = time.monotonic()
@@ -445,12 +481,18 @@ class Scanner:
             lists, failed_lists = read_community(self.list_commits)
             self.community.update(lists)
             self.community_at = time.monotonic()
-            update_boards(self.boards, lists, BUILT_IN_BOARDS + (config.get("extra_boards") or []))
-        keys = self.live_boards()
+            discovery_lists, _ = read_community(self.list_commits, DISCOVERY_LISTS)
+            update_boards(self.boards, dict(lists, **discovery_lists),
+                          BUILT_IN_BOARDS + (config.get("extra_boards") or []))
+        keys = self.choose_boards()
+        self.cycle_number += 1
         direct, failed, unchanged = scrape_boards(self.boards, keys)
+        for key in keys:
+            self.boards[key]["read"] = True
 
-        # Roles on boards that didn't change, or couldn't be read, are still open as far as we know.
-        retained = failed | unchanged
+        # Roles on boards that didn't change, weren't read this cycle, or couldn't be read
+        # are still open as far as we know.
+        retained = failed | unchanged | (set(self.live_boards()) - set(keys))
         community_names = {"community:" + name for name in COMMUNITY_LISTS}
         fresh_community = {"community:" + name for name in lists}
         kept_direct = [item for item in self.jobs if item["board"] in retained]

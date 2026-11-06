@@ -37,6 +37,16 @@ def _slot(url):
         return _host_slots[urlparse(url).netloc]
 
 
+def fetch_text(url, timeout=30):
+    """GET a web page and return its text."""
+    request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+    try:
+        with _slot(url), urllib.request.urlopen(request, timeout=timeout) as response:
+            return response.read().decode("utf-8", "replace")
+    except (OSError, http.client.HTTPException) as error:
+        raise FetchError("%s: %r" % (url, error))
+
+
 def fetch_json(url, body=None, timeout=20, retries=2, cache=None, extra_headers=None):
     """GET a URL, or POST `body` as JSON, and return the parsed response.
 

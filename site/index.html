@@ -37,6 +37,11 @@
     background: var(--panel); border: 1px solid var(--line); border-radius: 999px; height: 36px; padding: 0 14px;
     cursor: pointer;
   }
+  .quick .linkedin {
+    display: inline-flex; align-items: center; height: 36px; padding: 0 14px; border-radius: 999px;
+    border: 1px solid var(--line); background: var(--panel); color: var(--ink); font-weight: 600; text-decoration: none;
+  }
+  .quick .linkedin:hover { border-color: var(--accent); color: var(--accent); }
   .quick button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
   .quick small { font-size: 13px; font-weight: 500; opacity: 0.7; }
   .swatch { width: 10px; height: 10px; border-radius: 3px; }
@@ -147,6 +152,8 @@
   <div class="quick">
     <button id="today" aria-pressed="false"></button>
     <button id="top" aria-pressed="false"></button>
+    <a class="linkedin" target="_blank" rel="noopener noreferrer"
+       href="https://www.linkedin.com/jobs/search/?keywords=software%20engineer%20intern&amp;location=United%20States&amp;f_JT=I&amp;f_TPR=r86400&amp;sortBy=DD">LinkedIn, last 24 hours ↗</a>
   </div>
 
   <div class="filters">
@@ -202,7 +209,8 @@ const PAGE = 50;
 const REFRESH_MS = 75000;
 const SOURCES = {
   greenhouse: "Greenhouse", lever: "Lever", ashby: "Ashby", workday: "Workday", oracle: "Oracle",
-  amazon: "Amazon Jobs", smartrecruiters: "SmartRecruiters", workable: "Workable",
+  amazon: "Amazon Jobs", smartrecruiters: "SmartRecruiters", workable: "Workable", rippling: "Rippling",
+  apple: "Apple Jobs", google: "Google Careers", tiktok: "TikTok Careers", jibe: "Company site",
   "community:simplify": "SimplifyJobs list", "community:vansh": "vanshb03 list",
 };
 const BIG_TECH = [

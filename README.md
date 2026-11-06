@@ -8,12 +8,14 @@ It's built to run entirely on GitHub for free, so my computer can stay off.
 
 1. A GitHub Actions job ([scrape.yml](.github/workflows/scrape.yml)) scans in a loop for about 5.5 hours. The schedule queues the next run, which starts when that one ends.
 2. Each cycle checks every board. Boards that haven't changed answer almost instantly, so only real changes cost any time.
-3. It reads the public job APIs of Greenhouse, Lever, Ashby, SmartRecruiters, Workable, Workday, Oracle and Amazon.
-4. Every cycle it also checks [SimplifyJobs](https://github.com/SimplifyJobs/Summer2027-Internships) and [vanshb03](https://github.com/vanshb03/Summer2027-Internships) for new commits. They add roles from systems without an open API, and their links reveal new company boards to scan automatically.
+3. It reads the public job data of Greenhouse, Lever, Ashby, SmartRecruiters, Workable, Workday, Oracle, Rippling, Amazon, Apple, Google, TikTok, AMD and Keysight.
+4. Every cycle it also checks [SimplifyJobs](https://github.com/SimplifyJobs/Summer2027-Internships) and [vanshb03](https://github.com/vanshb03/Summer2027-Internships) for new commits. They add roles from systems without an open API, and their links reveal new company boards to scan automatically. [Simplify's new-grad repo](https://github.com/SimplifyJobs/New-Grad-Positions) is used only to find more boards.
 5. Listings are saved to the `data` branch. The page ([site/index.html](site/index.html)) is published with GitHub Pages and refreshes itself about every 75 seconds.
 6. New matches open a GitHub issue that mentions me, which GitHub sends as an email.
 
 Roles disappear once the employer takes them down or their season has passed. If a board can't be read, its roles stay until the next successful read.
+
+Sites whose rules disallow automated access aren't scanned. That includes LinkedIn, Microsoft and Netflix, though their roles can still arrive through the community lists. The page has a link that opens LinkedIn's newest internships in my own browser.
 
 The Posted column shows the employer's own date. Roles from the community lists show the date they were added to the list, which can be later than the real posting.
 

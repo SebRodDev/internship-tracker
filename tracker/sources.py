@@ -7,18 +7,21 @@ URL to read the job's description from when the listing itself doesn't give the 
 from __future__ import annotations
 
 import html
+import json
 import re
 from datetime import datetime, timedelta, timezone
 from urllib.parse import quote
 
 from .classify import is_internship
-from .net import Unchanged, fetch_json
+from .net import Unchanged, fetch_json, fetch_text
 
 # Community repositories, as name: (repository, branch).
 COMMUNITY_LISTS = {
     "simplify": ("SimplifyJobs/Summer2027-Internships", "dev"),
     "vansh": ("vanshb03/Summer2027-Internships", "dev"),
 }
+# Repositories read only to find more company boards, not for their roles.
+DISCOVERY_LISTS = {"newgrad": ("SimplifyJobs/New-Grad-Positions", "dev")}
 LISTINGS_PATH = ".github/scripts/listings.json"
 SEARCH_TERMS = ("intern", "co-op")
 WORKDAY_PAGE = 20
@@ -27,7 +30,17 @@ WORKDAY_MAX_PAGES = 8
 WORKDAY_FULL_READ_EVERY = 30
 AMAZON_PAGE = 100
 AMAZON_MAX_PAGES = 15
-BUILT_IN_BOARDS = [{"ats": "amazon", "slug": "jobs", "company": "Amazon"}]
+JIBE_PAGE = 100
+TIKTOK_PAGE = 100
+TIKTOK_MAX_PAGES = 40
+BUILT_IN_BOARDS = [
+    {"ats": "amazon", "slug": "jobs", "company": "Amazon"},
+    {"ats": "google", "slug": "jobs", "company": "Google"},
+    {"ats": "apple", "slug": "jobs", "company": "Apple"},
+    {"ats": "tiktok", "slug": "jobs", "company": "TikTok"},
+    {"ats": "jibe", "slug": "careers.amd.com", "company": "AMD"},
+    {"ats": "jibe", "slug": "jobs.keysight.com", "company": "Keysight Technologies"},
+]
 
 
 def iso(value):
@@ -39,6 +52,7 @@ def iso(value):
             parsed = datetime.fromtimestamp(value, timezone.utc)
         else:
             text = re.sub(r"\.(\d{3})\d*", r".\1", value.strip().replace("Z", "+00:00"))
+            text = re.sub(r"([+-]\d\d)(\d\d)$", r"\1:\2", text)
             parsed = datetime.fromisoformat(text)
             if parsed.tzinfo is None:
                 parsed = parsed.replace(tzinfo=timezone.utc)
@@ -88,7 +102,7 @@ def read_detail(url):
     return {"pay": find_pay(text.replace("\xa0", " ")), "posted": iso(info.get("startDate"))}
 
 
-def job(title, company, location, url, posted, pay=None, detail=None):
+def job(title, company, location, url, posted, pay=None, detail=None, country=None):
     locations = location if isinstance(location, list) else [location]
     return {
         "title": " ".join((title or "").split()),
@@ -98,6 +112,7 @@ def job(title, company, location, url, posted, pay=None, detail=None):
         "posted": posted,
         "pay": pay,
         "detail": detail,
+        "country": (country or "").upper()[:3] or None,
     }
 
 
@@ -131,7 +146,8 @@ def lever(board):
                 pay = _format_pay(float(salary["min"]), float(salary.get("max") or salary["min"]))
             results.append(job(item["text"], board["company"], places, item["hostedUrl"],
                                iso(created / 1000) if created else None,
-                               pay=pay or find_pay(item.get("salaryDescriptionPlain"))))
+                               pay=pay or find_pay(item.get("salaryDescriptionPlain")),
+                               country=item.get("country")))
     return results
 
 
@@ -144,9 +160,11 @@ def ashby(board):
             places = [item.get("location")]
             places += [extra.get("location") for extra in item.get("secondaryLocations") or []]
             compensation = item.get("compensation") or {}
+            address = (item.get("address") or {}).get("postalAddress") or {}
             results.append(job(item["title"], board["company"], places, item["jobUrl"],
                                iso(item.get("publishedAt")),
-                               pay=find_pay(compensation.get("compensationTierSummary"))))
+                               pay=find_pay(compensation.get("compensationTierSummary")),
+                               country=address.get("addressCountry")))
     return results
 
 
@@ -165,7 +183,7 @@ def smartrecruiters(board):
                 results[item["id"]] = job(
                     item["name"], board["company"], location,
                     "https://jobs.smartrecruiters.com/%s/%s" % (board["slug"], item["id"]),
-                    iso(item.get("releasedDate")))
+                    iso(item.get("releasedDate")), country=place.get("country"))
     return list(results.values())
 
 
@@ -178,8 +196,10 @@ def workable(board):
             location = ", ".join(part for part in parts if part)
             if item.get("telecommuting"):
                 location = "Remote - " + location
+            codes = [place.get("countryCode") for place in item.get("locations") or []]
             results.append(job(item["title"], board["company"], location, item["url"],
-                               iso(item.get("published_on"))))
+                               iso(item.get("published_on")),
+                               country="US" if "US" in codes else (codes or [None])[0]))
     return results
 
 
@@ -286,6 +306,99 @@ def amazon(board):
     return list(results.values())
 
 
+def jibe(board):
+    """The careers-site platform used by AMD, Keysight and others."""
+    host = board["slug"]
+    results = {}
+    for term in SEARCH_TERMS:
+        url = "https://%s/api/jobs?keywords=%s&limit=%d&page=1" % (host, quote(term), JIBE_PAGE)
+        for entry in fetch_json(url).get("jobs") or []:
+            item = entry.get("data") or {}
+            if is_internship(item.get("title") or ""):
+                results[item["slug"]] = job(
+                    item["title"], board["company"], item.get("full_location"),
+                    "https://%s/jobs/%s" % (host, item["slug"]), iso(item.get("posted_date")),
+                    country=item.get("country_code"))
+    return list(results.values())
+
+
+def rippling(board):
+    url = "https://ats.rippling.com/api/v2/board/%s/jobs?page=0&pageSize=100" % quote(board["slug"])
+    results = []
+    for item in fetch_json(url).get("items") or []:
+        if is_internship(item.get("name") or ""):
+            places = item.get("locations") or item.get("workLocation") or []
+            names = [place.get("name") if isinstance(place, dict) else place
+                     for place in (places if isinstance(places, list) else [places])]
+            results.append(job(item["name"], board["company"], names, item["url"], None))
+    return results
+
+
+def tiktok(board):
+    url = "https://api.lifeattiktok.com/api/v1/public/supplier/search/job/posts"
+    results = []
+    for page in range(TIKTOK_MAX_PAGES):
+        body = {"recruitment_id_list": [], "job_category_id_list": [], "subject_id_list": [],
+                "location_code_list": [], "keyword": "intern", "limit": TIKTOK_PAGE,
+                "offset": page * TIKTOK_PAGE}
+        data = fetch_json(url, body=body, extra_headers={"website-path": "tiktok"}).get("data") or {}
+        postings = data.get("job_post_list") or []
+        for item in postings:
+            if is_internship(item.get("title") or ""):
+                place = item.get("city_info") or {}
+                names = []
+                while place:
+                    names.append(place.get("en_name"))
+                    place = place.get("parent") or place.get("parent_city")
+                results.append(job(item["title"], board["company"], ", ".join(filter(None, names)),
+                                   "https://lifeattiktok.com/search/%s" % item["id"], None))
+        if len(postings) < TIKTOK_PAGE:
+            break
+    return results
+
+
+def google(board):
+    """Google's results page embeds its data as a JavaScript array.
+
+    Only the first page is read, because Google's robots rules disallow the later ones.
+    """
+    url = ("https://www.google.com/about/careers/applications/jobs/results"
+           "?target_level=INTERN_AND_APPRENTICE&location=United%20States&sort_by=date")
+    text = fetch_text(url)
+    start = text.index("data:", text.index("AF_initDataCallback({key: 'ds:1'")) + 5
+    rows = json.JSONDecoder().raw_decode(text[start:])[0][0] or []
+    return [
+        job(row[1], "Google", [place[0] for place in row[9] or []],
+            "https://www.google.com/about/careers/applications/jobs/results/%s" % row[0],
+            iso(row[12][0]) if row[12] else None, country="US")
+        for row in rows
+    ]
+
+
+def apple(board):
+    """Apple's search page embeds its results as JSON."""
+    results = {}
+    for page in range(1, 11):
+        url = ("https://jobs.apple.com/en-us/search?team=internships-STDNT-INTRN"
+               "&location=united-states-USA&page=%d" % page)
+        text = fetch_text(url)
+        match = re.search(r'__staticRouterHydrationData\s*=\s*JSON\.parse\((".*?")\);', text, re.S)
+        state = json.loads(json.loads(match.group(1)))
+        loader = state["loaderData"]
+        found = next((value for value in loader.values()
+                      if isinstance(value, dict) and "searchResults" in value), {})
+        rows = found.get("searchResults") or []
+        for item in rows:
+            path = "%s/%s" % (item["positionId"], item.get("transformedPostingTitle") or "")
+            names = [place.get("name") for place in item.get("locations") or []]
+            results[item["positionId"]] = job(
+                item["postingTitle"], "Apple", names, "https://jobs.apple.com/en-us/details/" + path,
+                iso(item.get("postDateInGMT")), country="US")
+        if len(results) >= (found.get("totalRecords") or 0) or not rows:
+            break
+    return list(results.values())
+
+
 FETCHERS = {
     "greenhouse": greenhouse,
     "lever": lever,
@@ -295,6 +408,11 @@ FETCHERS = {
     "workday": workday,
     "oracle": oracle,
     "amazon": amazon,
+    "jibe": jibe,
+    "rippling": rippling,
+    "tiktok": tiktok,
+    "google": google,
+    "apple": apple,
 }
 
 

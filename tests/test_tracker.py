@@ -66,6 +66,13 @@ class Labels(unittest.TestCase):
         self.assertEqual(regions_for(["China, Shanghai"]), ["other"])
         self.assertEqual(regions_for(["Remote"]), ["remote"])
         self.assertEqual(regions_for(["Golden CO (+ more)"]), ["us"])
+        self.assertEqual(regions_for(["Remote - Germany"]), ["other"])
+        self.assertEqual(regions_for(["WI-Milwaukee"]), ["us"])
+        self.assertEqual(regions_for(["Mexico City"]), ["other"])
+        self.assertEqual(regions_for(["New Mexico"]), ["us"])
+        self.assertEqual(regions_for(["Headquarters"], "US"), ["us"])
+        self.assertEqual(regions_for(["Headquarters"], "CA"), ["canada"])
+        self.assertEqual(regions_for(["Headquarters"], "DE"), ["other"])
         self.assertEqual(regions_for([]), ["other"])
 
     def test_term(self):
@@ -137,6 +144,7 @@ class Dates(unittest.TestCase):
         self.assertEqual(iso("2026-04-07T17:12:35.753+00:00"), "2026-04-07T17:12:35Z")
         self.assertEqual(iso("2026-11-06T01:06:26.689Z"), "2026-11-06T01:06:26Z")
         self.assertEqual(iso("2026-05-29"), "2026-05-29T00:00:00Z")
+        self.assertEqual(iso("2026-08-20T23:28:00+0000"), "2026-08-20T23:28:00Z")
         self.assertEqual(iso(0), "1970-01-01T00:00:00Z")
         self.assertIsNone(iso(None))
         self.assertIsNone(iso("soon"))
@@ -293,7 +301,9 @@ class FullCycle(unittest.TestCase):
             patch.start()
             self.addCleanup(patch.stop)
 
-    def fake_lists(self, commits):
+    def fake_lists(self, commits, sources=main.COMMUNITY_LISTS):
+        if sources is not main.COMMUNITY_LISTS:
+            return {}, set()
         changed = commits.get("simplify") != id(self.community)
         commits["simplify"] = id(self.community)
         return ({"simplify": self.community} if changed else {}), set()
@@ -400,6 +410,23 @@ class FullCycle(unittest.TestCase):
 
 
 class CommunityLists(unittest.TestCase):
+    def test_discovery_list_adds_boards_but_no_roles(self):
+        def fake(commits, sources=main.COMMUNITY_LISTS):
+            if sources is main.COMMUNITY_LISTS:
+                return {"simplify": []}, set()
+            return {"newgrad": [{"url": "https://jobs.lever.co/newco/1", "company_name": "NewCo",
+                                 "title": "Software Engineer Intern", "active": True}]}, set()
+
+        with tempfile.TemporaryDirectory() as folder, \
+                mock.patch.object(main, "read_community", fake), \
+                mock.patch.object(main, "BUILT_IN_BOARDS", []), \
+                mock.patch.object(main, "scrape_boards", return_value=([], set(), set())), \
+                mock.patch.object(main, "fill_domains"):
+            scanner = main.Scanner(Path(folder), {})
+            scanner.cycle()
+        self.assertIn("lever:newco", scanner.boards)
+        self.assertEqual(scanner.jobs, [])
+
     def read(self, commits):
         with mock.patch.object(main, "latest_commit", return_value="abc"), \
                 mock.patch.object(main, "read_listings", return_value=[{"title": "x"}]) as reader:
@@ -442,6 +469,14 @@ class PastSeasons(unittest.TestCase):
 
 
 class Sources(unittest.TestCase):
+    def test_rippling_board(self):
+        self.assertEqual(parse_board("https://ats.rippling.com/pathos/jobs/9396"), ("rippling", "pathos"))
+
+    def test_blocked_platforms_are_not_read(self):
+        self.assertIsNone(parse_board("https://johndeere.eightfold.ai/careers/job/1"))
+        for name in ("eightfold", "muse", "linkedin"):
+            self.assertNotIn(name, main.FETCHERS)
+
     def test_oracle_board(self):
         self.assertEqual(
             parse_board("https://ewvl.fa.us8.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1/job/1994"),
