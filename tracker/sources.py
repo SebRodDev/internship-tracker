@@ -14,10 +14,12 @@ from urllib.parse import quote
 from .classify import is_internship
 from .net import Unchanged, fetch_json
 
+# Community repositories, as name: (repository, branch).
 COMMUNITY_LISTS = {
-    "simplify": "https://raw.githubusercontent.com/SimplifyJobs/Summer2027-Internships/dev/.github/scripts/listings.json",
-    "vansh": "https://raw.githubusercontent.com/vanshb03/Summer2027-Internships/dev/.github/scripts/listings.json",
+    "simplify": ("SimplifyJobs/Summer2027-Internships", "dev"),
+    "vansh": ("vanshb03/Summer2027-Internships", "dev"),
 }
+LISTINGS_PATH = ".github/scripts/listings.json"
 SEARCH_TERMS = ("intern", "co-op")
 WORKDAY_PAGE = 20
 WORKDAY_MAX_PAGES = 8
@@ -294,3 +296,15 @@ FETCHERS = {
     "oracle": oracle,
     "amazon": amazon,
 }
+
+
+def latest_commit(repository, branch, token=None):
+    headers = {"Authorization": "Bearer " + token} if token else None
+    url = "https://api.github.com/repos/%s/git/ref/heads/%s" % (repository, branch)
+    return fetch_json(url, extra_headers=headers)["object"]["sha"]
+
+
+def read_listings(repository, commit):
+    """Read a list at one commit, which skips the 5-minute cache on a branch's file links."""
+    url = "https://raw.githubusercontent.com/%s/%s/%s" % (repository, commit, LISTINGS_PATH)
+    return fetch_json(url, timeout=60)

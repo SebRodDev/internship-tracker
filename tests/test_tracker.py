@@ -285,13 +285,18 @@ class FullCycle(unittest.TestCase):
         self.community = []
         patches = [
             mock.patch.dict(main.FETCHERS, {"fake": self.fake_fetch}),
-            mock.patch.object(main, "read_community", lambda: ({"simplify": self.community}, set())),
+            mock.patch.object(main, "read_community", self.fake_lists),
             mock.patch.object(main, "fill_domains", lambda jobs, domains: None),
             mock.patch.object(main, "BUILT_IN_BOARDS", []),
         ]
         for patch in patches:
             patch.start()
             self.addCleanup(patch.stop)
+
+    def fake_lists(self, commits):
+        changed = commits.get("simplify") != id(self.community)
+        commits["simplify"] = id(self.community)
+        return ({"simplify": self.community} if changed else {}), set()
 
     def fake_fetch(self, board):
         result = self.results[board["slug"]]
@@ -343,6 +348,17 @@ class FullCycle(unittest.TestCase):
         scanner.cycle()
         self.assertEqual(self.titles(scanner), ["Listed Software Intern"])
 
+    def test_list_is_reread_when_it_changes_and_closed_roles_leave(self):
+        item = {"title": "Listed Software Intern", "company_name": "C", "active": True,
+                "url": "https://c.test/1", "locations": ["Austin, TX"], "date_posted": 1793900000}
+        self.community = [item]
+        scanner = self.scanner()
+        scanner.cycle()
+        self.community = [dict(item, active=False)]
+        scanner.community_at = 0
+        scanner.cycle()
+        self.assertEqual(scanner.jobs, [])
+
     def test_dead_board_is_skipped_and_its_jobs_removed(self):
         self.results = {"a": [self.job("Software Intern")]}
         scanner = self.scanner()
@@ -381,6 +397,32 @@ class FullCycle(unittest.TestCase):
                 mock.patch.object(main, "send_alert", return_value=False):
             scanner.cycle()
         self.assertEqual(scanner.meta["last_alert"], "2026-01-01T00:00:00Z")
+
+
+class CommunityLists(unittest.TestCase):
+    def read(self, commits):
+        with mock.patch.object(main, "latest_commit", return_value="abc"), \
+                mock.patch.object(main, "read_listings", return_value=[{"title": "x"}]) as reader:
+            return main.read_community(commits), reader
+
+    def test_new_commit_is_read_and_remembered(self):
+        commits = {}
+        (lists, failed), reader = self.read(commits)
+        self.assertEqual(set(lists), {"simplify", "vansh"})
+        self.assertEqual(commits, {"simplify": "abc", "vansh": "abc"})
+        self.assertEqual(failed, set())
+
+    def test_same_commit_downloads_nothing(self):
+        (lists, _), reader = self.read({"simplify": "abc", "vansh": "abc"})
+        self.assertEqual(lists, {})
+        reader.assert_not_called()
+
+    def test_failure_is_retried_next_time(self):
+        commits = {}
+        with mock.patch.object(main, "latest_commit", side_effect=FetchError("down")):
+            lists, failed = main.read_community(commits)
+        self.assertEqual(failed, {"simplify", "vansh"})
+        self.assertEqual(commits, {})
 
 
 class PastSeasons(unittest.TestCase):

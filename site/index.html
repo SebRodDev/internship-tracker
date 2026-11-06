@@ -10,13 +10,13 @@
     color-scheme: light dark;
     --bg: #fafaf9; --panel: #ffffff; --head: #f5f5f3; --ink: #18181a; --muted: #6f7076;
     --line: #e7e6e2; --accent: #2456d6; --accent-ink: #ffffff; --soft: #e9effd; --live: #12864f;
-    --warn: #a35f00;
+    --warn: #a35f00; --big-bg: #e8f0fe; --big-ink: #1a4fb8; --ai-bg: #f1e9fd; --ai-ink: #6a2fb5;
   }
   @media (prefers-color-scheme: dark) {
     :root {
       --bg: #121315; --panel: #1a1b1e; --head: #202125; --ink: #ededeb; --muted: #9a9ca3;
       --line: #2d2e33; --accent: #8aa9ff; --accent-ink: #10162a; --soft: #1f2a47; --live: #4cc38a;
-      --warn: #e2a84f;
+      --warn: #e2a84f; --big-bg: #1c2a44; --big-ink: #9dbcff; --ai-bg: #2d2145; --ai-ink: #cdb1ff;
     }
   }
   * { box-sizing: border-box; }
@@ -31,7 +31,18 @@
   .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--live); }
   #status.bad .dot { background: var(--warn); }
 
-  .filters { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-top: 24px; }
+  .quick { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 22px; }
+  .quick button {
+    display: inline-flex; align-items: center; gap: 7px; font: inherit; font-weight: 600; color: var(--ink);
+    background: var(--panel); border: 1px solid var(--line); border-radius: 999px; height: 36px; padding: 0 14px;
+    cursor: pointer;
+  }
+  .quick button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+  .quick small { font-size: 13px; font-weight: 500; opacity: 0.7; }
+  .swatch { width: 10px; height: 10px; border-radius: 3px; }
+  .swatch.big { background: var(--big-ink); }
+  .swatch.ai { background: var(--ai-ink); }
+  .filters { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-top: 10px; }
   .field {
     display: flex; align-items: center; gap: 6px; background: var(--panel); min-width: 0;
     border: 1px solid var(--line); border-radius: 6px; padding: 0 12px; height: 40px;
@@ -59,6 +70,13 @@
   td { padding: 12px 14px; vertical-align: top; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
   tbody tr:last-child td { border-bottom: 0; }
   tbody tr:hover { background: var(--head); }
+  tbody tr.tier-big, tbody tr.tier-big:hover { background: var(--big-bg); }
+  tbody tr.tier-ai, tbody tr.tier-ai:hover { background: var(--ai-bg); }
+  tr.tier-big td:first-child { box-shadow: inset 3px 0 0 var(--big-ink); }
+  tr.tier-ai td:first-child { box-shadow: inset 3px 0 0 var(--ai-ink); }
+  .badge { display: block; font-size: 11px; font-weight: 700; margin-top: 1px; }
+  .tier-big .badge { color: var(--big-ink); }
+  .tier-ai .badge { color: var(--ai-ink); }
   tr.fresh { animation: arrive 4s ease-out; }
   @keyframes arrive { from { background: var(--soft); } to { background: transparent; } }
   @media (prefers-reduced-motion: reduce) { tr.fresh { animation: none; } }
@@ -109,6 +127,9 @@
     table, tbody, tr, td { display: block; width: 100%; }
     tr { position: relative; padding: 12px 14px; border-bottom: 1px solid var(--line); }
     tbody tr:last-child { border-bottom: 0; }
+    tr.tier-big td:first-child, tr.tier-ai td:first-child { box-shadow: none; }
+    tr.tier-big { box-shadow: inset 3px 0 0 var(--big-ink); }
+    tr.tier-ai { box-shadow: inset 3px 0 0 var(--ai-ink); }
     td { border: 0; padding: 0; margin-bottom: 3px; }
     td:empty { display: none; }
     .cell-found { position: absolute; top: 12px; right: 14px; width: auto; }
@@ -122,6 +143,11 @@
 <main>
   <h1>Tech internships</h1>
   <div id="status" role="status">Loading…</div>
+
+  <div class="quick">
+    <button id="today" aria-pressed="false"></button>
+    <button id="top" aria-pressed="false"></button>
+  </div>
 
   <div class="filters">
     <label class="field search"><input id="search" type="search" placeholder="Search title or company" aria-label="Search title or company"></label>
@@ -175,9 +201,32 @@
 const PAGE = 50;
 const REFRESH_MS = 75000;
 const SOURCES = {
-  greenhouse: "Greenhouse", lever: "Lever", ashby: "Ashby", workday: "Workday",
-  smartrecruiters: "SmartRecruiters", workable: "Workable", community: "Community list",
+  greenhouse: "Greenhouse", lever: "Lever", ashby: "Ashby", workday: "Workday", oracle: "Oracle",
+  amazon: "Amazon Jobs", smartrecruiters: "SmartRecruiters", workable: "Workable",
+  "community:simplify": "SimplifyJobs list", "community:vansh": "vanshb03 list",
 };
+const BIG_TECH = [
+  "Google", "Alphabet", "Meta", "Facebook", "Amazon", "Amazon.com Services LLC", "Amazon Web Services", "AWS",
+  "Apple", "Netflix", "Microsoft", "LinkedIn", "GitHub", "NVIDIA", "Tesla", "Waymo", "TikTok", "ByteDance",
+  "Oracle", "IBM", "Intel", "AMD", "Qualcomm", "Cisco", "Broadcom", "Salesforce", "Adobe", "ServiceNow",
+  "Intuit", "SAP", "Uber", "Lyft", "Airbnb", "DoorDash", "Stripe", "Block", "Square", "PayPal", "Coinbase",
+  "Shopify", "Spotify", "Snap", "Pinterest", "Reddit", "Roblox", "Atlassian", "Dropbox", "Zoom", "Palantir",
+  "Palantir Technologies", "Snowflake", "Databricks", "Bloomberg", "Samsung", "Sony", "Tencent", "Alibaba",
+];
+const AI_LABS = [
+  "OpenAI", "Anthropic", "Google DeepMind", "DeepMind", "xAI", "Mistral AI", "Mistral", "Cohere", "Perplexity AI",
+  "Perplexity", "Scale AI", "Hugging Face", "Together AI", "Physical Intelligence", "Skild AI",
+  "Thinking Machines Lab", "Thinking Machines", "Safe Superintelligence", "Reflection AI", "Character AI",
+  "Character.AI", "Runway", "Stability AI", "Midjourney", "Allen Institute for AI", "Ai2", "Anysphere", "Cursor",
+  "Cognition", "ElevenLabs", "Luma AI", "Black Forest Labs", "Sakana AI", "Liquid AI", "World Labs", "Periodic Labs",
+];
+const nameKey = (name) => name.toLowerCase().replace(/[^a-z0-9]/g, "");
+/* Exact names only, so "Apple Bank" doesn't count as Apple. */
+const TIERS = new Map([
+  ...BIG_TECH.map((name) => [nameKey(name), { className: "tier-big", label: "Big tech" }]),
+  ...AI_LABS.map((name) => [nameKey(name), { className: "tier-ai", label: "AI lab" }]),
+]);
+const tierOf = (job) => TIERS.get(nameKey(job.company));
 const TILE_COLORS = ["#2456d6", "#12864f", "#b4442d", "#7a3fc4", "#0b7a8c", "#a35f00", "#c0357a", "#4b5563"];
 const $ = (id) => document.getElementById(id);
 
@@ -190,7 +239,7 @@ function write(key, value) {
 
 const marks = read("marks", {});
 const state = Object.assign(
-  { track: "", region: "na", age: "0", term: "", pay: false },
+  { track: "", region: "na", age: "0", term: "", pay: false, today: false, top: false },
   read("filters", {}), { view: "all", query: "" }
 );
 let jobs = [];
@@ -213,25 +262,37 @@ function timeAgo(iso) {
   return Math.floor(days * 24) + "h ago";
 }
 
-/* Some employers only publish a date, stored as midnight UTC, so never show an hour for those. */
+function localDate(moment = new Date()) {
+  const pad = (number) => String(number).padStart(2, "0");
+  return moment.getFullYear() + "-" + pad(moment.getMonth() + 1) + "-" + pad(moment.getDate());
+}
+
+/* Some employers only publish a date, stored as midnight UTC. That date is used as it is,
+   because converting it would move it to the evening before in US time zones. */
+function postedDay(iso) {
+  return iso.endsWith("T00:00:00Z") ? iso.slice(0, 10) : localDate(new Date(iso));
+}
+const postedToday = (job) => Boolean(job.posted) && postedDay(job.posted) >= localDate();
+
 function postedLabel(iso) {
   if (!iso) return "—";
   const dateOnly = iso.endsWith("T00:00:00Z");
   const days = ageDays(iso);
   if (!dateOnly && days < 1) return days < 0 ? "Today" : timeAgo(iso);
   const options = { month: "short", day: "numeric", timeZone: dateOnly ? "UTC" : undefined };
-  const today = new Date().toISOString().slice(0, 10);
-  if (dateOnly && iso.slice(0, 10) >= today) return "Today";
+  if (dateOnly && postedDay(iso) >= localDate()) return "Today";
   return new Date(iso).toLocaleDateString(undefined, options);
 }
 
-function matches(job) {
+function matches(job, ignore = "") {
   if (state.view !== "all") return marks[job.id] === state.view;
+  if (state.today && ignore !== "today" && !postedToday(job)) return false;
+  if (state.top && ignore !== "top" && !tierOf(job)) return false;
   if (marks[job.id] === "applied") return false;
   if (state.region === "na" ? !job.regions.some((region) => region !== "other")
       : state.region !== "all" && !job.regions.includes(state.region)) return false;
   if (state.track && job.track !== state.track) return false;
-  if (state.age !== "0" && (!job.posted || ageDays(job.posted) > Number(state.age))) return false;
+  if (!state.today && state.age !== "0" && (!job.posted || ageDays(job.posted) > Number(state.age))) return false;
   if (state.term && job.term !== state.term) return false;
   if (state.pay && !job.pay) return false;
   if (state.query) {
@@ -301,20 +362,23 @@ function markButton(job, mark, label) {
 }
 
 function row(job) {
-  const tr = element("tr", freshIds.has(job.id) ? "fresh" : "");
+  const tier = tierOf(job);
+  const tr = element("tr", [freshIds.has(job.id) ? "fresh" : "", tier ? tier.className : ""].join(" ").trim());
 
   const recent = job.posted && ageDays(job.posted) < 2;
   const found = element("div", "found" + (recent ? " recent" : ""), postedLabel(job.posted));
   found.title = job.posted ? "Posted by the employer" : "The employer didn't publish a date";
 
   const company = element("div", "company");
-  company.append(companyTile(job.company, job.domain), element("span", "", job.company));
+  const name = element("span", "", job.company);
+  if (tier) name.append(element("span", "badge", tier.label));
+  company.append(companyTile(job.company, job.domain), name);
 
   const role = element("a", "role", job.title);
   role.href = safeUrl(job.url);
   role.target = "_blank";
   role.rel = "noopener noreferrer";
-  const source = SOURCES[job.board.split(":")[0]] || "Company site";
+  const source = SOURCES[job.board] || SOURCES[job.board.split(":")[0]] || "Company site";
   const via = element("div", "via", ["via " + source, job.term].filter(Boolean).join(" · "));
 
   const places = job.location.slice(0, 2).join(" · ") || "Not listed";
@@ -341,7 +405,8 @@ function render(resetPaging = true) {
   const { view, query, ...saved } = state;
   write("filters", saved);
 
-  const visible = jobs.filter(matches);
+  const visible = jobs.filter((job) => matches(job));
+  renderQuickFilters();
   $("count").textContent = visible.length.toLocaleString() + (visible.length === 1 ? " internship" : " internships");
   const rows = $("rows");
   rows.replaceChildren(...visible.slice(0, shown).map(row));
@@ -353,6 +418,19 @@ function render(resetPaging = true) {
     rows.append(tr);
   }
   $("more").hidden = visible.length <= shown;
+}
+
+function renderQuickFilters() {
+  const count = (ignore, test) => jobs.filter((job) => matches(job, ignore) && test(job)).length.toLocaleString();
+  const day = new Date().toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" });
+  const today = $("today");
+  today.replaceChildren("Posted today", element("small", "", day + " · " + count("today", postedToday)));
+  today.setAttribute("aria-pressed", state.today);
+  const top = $("top");
+  const swatches = [element("span", "swatch big"), element("span", "swatch ai")];
+  top.replaceChildren(...swatches, "Big tech & AI labs", element("small", "", count("top", tierOf)));
+  top.setAttribute("aria-pressed", state.top);
+  $("age").disabled = state.today;
 }
 
 function fillOptions(select, values) {
@@ -443,6 +521,9 @@ function bindControls() {
     $("pay").setAttribute("aria-pressed", state.pay);
     render();
   });
+  for (const name of ["today", "top"]) {
+    $(name).addEventListener("click", () => { state[name] = !state[name]; render(); });
+  }
   $("more").addEventListener("click", () => { shown += PAGE; render(false); });
 }
 

@@ -37,7 +37,7 @@ def _slot(url):
         return _host_slots[urlparse(url).netloc]
 
 
-def fetch_json(url, body=None, timeout=20, retries=2, cache=None):
+def fetch_json(url, body=None, timeout=20, retries=2, cache=None, extra_headers=None):
     """GET a URL, or POST `body` as JSON, and return the parsed response.
 
     Pass a dict as `cache` to remember the server's ETag there. If the content hasn't
@@ -48,6 +48,7 @@ def fetch_json(url, body=None, timeout=20, retries=2, cache=None):
         "Accept": "application/json",
         "Accept-Encoding": "gzip",
     }
+    headers.update(extra_headers or {})
     if cache is not None and cache.get("etag"):
         headers["If-None-Match"] = cache["etag"]
     data = None

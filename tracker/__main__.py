@@ -24,14 +24,17 @@ from .classify import is_past, regions_for, term_for, track_for
 from .discover import parse_board, posting_key
 from .net import FetchError, Gone, Unchanged, fetch_json
 from .logos import fill_domains
-from .sources import BUILT_IN_BOARDS, COMMUNITY_LISTS, FETCHERS, iso, job, read_detail
+from .sources import (BUILT_IN_BOARDS, COMMUNITY_LISTS, FETCHERS, iso, job, latest_commit, read_detail,
+                      read_listings)
 
 # Bump this when filtering changes, so boards get re-read instead of reporting "unchanged".
 SCAN_VERSION = 3
 WORKERS = 40
 CYCLE_BUDGET_SECONDS = 15 * 60
 MIN_CYCLE_SECONDS = 60
-COMMUNITY_EVERY_SECONDS = 10 * 60
+# GitHub allows few API calls without a token, so check less often when running locally.
+GITHUB_TOKEN = os.environ.get("GH_TOKEN")
+COMMUNITY_EVERY_SECONDS = 0 if GITHUB_TOKEN else 10 * 60
 HEARTBEAT_SECONDS = 10 * 60
 DETAIL_LOOKUPS_PER_CYCLE = 200
 DROP_BOARD_AFTER_404S = 10
@@ -81,13 +84,20 @@ def board_key(ats, slug):
     return "%s:%s" % (ats, slug.lower())
 
 
-def read_community():
-    """Fetch the community lists. Returns ({name: raw items}, set of failed names)."""
+def read_community(commits):
+    """Fetch community lists with new commits. Returns ({name: raw items}, failed names).
+
+    `commits` remembers the last commit read from each list, so unchanged lists cost
+    one tiny request.
+    """
     lists, failed = {}, set()
-    for name, url in COMMUNITY_LISTS.items():
+    for name, (repository, branch) in COMMUNITY_LISTS.items():
         try:
-            lists[name] = fetch_json(url, timeout=60)
-        except FetchError as error:
+            commit = latest_commit(repository, branch, GITHUB_TOKEN)
+            if commit != commits.get(name):
+                lists[name] = read_listings(repository, commit)
+                commits[name] = commit
+        except (FetchError, KeyError, TypeError) as error:
             print("community list failed: %s" % error, file=sys.stderr)
             failed.add(name)
     return lists, failed
@@ -404,6 +414,7 @@ class Scanner:
         self.first_run = not self.seen
         self.community = {}
         self.community_at = 0
+        self.list_commits = {}
         self.published_at = 0
         self.forget_board_state_if_stale()
 
@@ -429,10 +440,9 @@ class Scanner:
         now = now_iso()
         config = self.config
 
-        failed_lists = set()
-        refreshed = time.monotonic() - self.community_at >= COMMUNITY_EVERY_SECONDS or not self.community_at
-        if refreshed:
-            lists, failed_lists = read_community()
+        lists, failed_lists = {}, set()
+        if not self.community_at or time.monotonic() - self.community_at >= COMMUNITY_EVERY_SECONDS:
+            lists, failed_lists = read_community(self.list_commits)
             self.community.update(lists)
             self.community_at = time.monotonic()
             update_boards(self.boards, lists, BUILT_IN_BOARDS + (config.get("extra_boards") or []))
@@ -442,8 +452,7 @@ class Scanner:
         # Roles on boards that didn't change, or couldn't be read, are still open as far as we know.
         retained = failed | unchanged
         community_names = {"community:" + name for name in COMMUNITY_LISTS}
-        fresh_community = set() if not refreshed else community_names - {
-            "community:" + name for name in failed_lists}
+        fresh_community = {"community:" + name for name in lists}
         kept_direct = [item for item in self.jobs if item["board"] in retained]
         kept_community = [item for item in self.jobs
                           if item["board"] in community_names - fresh_community]
@@ -451,7 +460,7 @@ class Scanner:
             item.setdefault("detail", None)
 
         before = {item["id"] for item in self.jobs}
-        new_community = community_jobs(self.community) if refreshed else []
+        new_community = community_jobs(lists)
         excluded = {normalize(name) for name in config.get("exclude_companies") or []}
         self.jobs = merge(kept_direct + direct + new_community + kept_community, self.seen, now,
                           excluded, config.get("tracks"), self.first_run)
@@ -484,7 +493,7 @@ class Scanner:
             "seconds": round(time.monotonic() - started),
             "healthy": healthy,
         })
-        if refreshed:
+        if lists:
             self.meta["lead"] = lead_over_lists(self.community, self.seen, now,
                                                 self.meta.setdefault("tracking_since", now))
         self.save(changed)

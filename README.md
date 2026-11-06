@@ -9,7 +9,7 @@ It's built to run entirely on GitHub for free, so my computer can stay off.
 1. A GitHub Actions job ([scrape.yml](.github/workflows/scrape.yml)) scans in a loop for about 5.5 hours. The schedule queues the next run, which starts when that one ends.
 2. Each cycle checks every board. Boards that haven't changed answer almost instantly, so only real changes cost any time.
 3. It reads the public job APIs of Greenhouse, Lever, Ashby, SmartRecruiters, Workable, Workday, Oracle and Amazon.
-4. Two community internship lists add roles from systems without an open API, and their links reveal new company boards to scan automatically.
+4. Every cycle it also checks [SimplifyJobs](https://github.com/SimplifyJobs/Summer2027-Internships) and [vanshb03](https://github.com/vanshb03/Summer2027-Internships) for new commits. They add roles from systems without an open API, and their links reveal new company boards to scan automatically.
 5. Listings are saved to the `data` branch. The page ([site/index.html](site/index.html)) is published with GitHub Pages and refreshes itself about every 75 seconds.
 6. New matches open a GitHub issue that mentions me, which GitHub sends as an email.
 
@@ -34,6 +34,8 @@ Edit [config.json](config.json) on GitHub or locally. The next run uses the chan
 | `watch_companies` | Always alert for these companies, ignoring the alert filters |
 | `exclude_companies` | Hide these companies everywhere |
 | `extra_boards` | Add a board by hand, such as `{"ats": "greenhouse", "slug": "stripe", "company": "Stripe"}` |
+
+The Big tech and AI lab highlights come from the `BIG_TECH` and `AI_LABS` lists in [site/index.html](site/index.html). Names must match exactly, so add a company there to highlight it.
 
 The Saved and Applied marks on the page are stored in my browser, so they don't sync between devices.
 
